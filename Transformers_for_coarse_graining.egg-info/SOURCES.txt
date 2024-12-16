@@ -1,0 +1,12 @@
+pyproject.toml
+setup.py
+Transformers_for_coarse_graining/Dataloading.py
+Transformers_for_coarse_graining/Functions.py
+Transformers_for_coarse_graining/Transformer_classes.py
+Transformers_for_coarse_graining/__init__.py
+Transformers_for_coarse_graining/cuda.py
+Transformers_for_coarse_graining.egg-info/PKG-INFO
+Transformers_for_coarse_graining.egg-info/SOURCES.txt
+Transformers_for_coarse_graining.egg-info/dependency_links.txt
+Transformers_for_coarse_graining.egg-info/requires.txt
+Transformers_for_coarse_graining.egg-info/top_level.txt

@@ -1,0 +1,5 @@
+Metadata-Version: 2.1
+Name: Transformers_for_coarse_graining
+Version: 0.1.1
+Requires-Dist: torch
+Requires-Dist: numpy
