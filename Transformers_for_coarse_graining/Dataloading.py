@@ -5,7 +5,32 @@ from dscribe.descriptors import SOAP
 from torch.utils.data import Dataset
 
 
-def load_xyz_energy_force(file_path, dtype=torch.float32):
+def load_xyz(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+        
+        data = []
+        i = 0
+        while i < len(lines):
+            config = []
+            # The first line is the number of atoms
+            num_atoms = int(lines[i].strip())
+            i += 1
+            
+            # The second line is a comment line
+            comment = lines[i].strip()
+            i += 1
+            
+            # The next num_atoms lines are the atomic data
+            for _ in range(num_atoms):
+                parts = lines[i].split()
+                x, y, z = map(float, parts[1:4])
+                config.append([x, y, z])
+                i += 1
+            data.append(config)
+        return np.array(data)
+
+def load_xyz_energy_force(file_path, dtype=torch.float32, force_rows = [7,10]):
     with open(file_path, 'r') as file:
         lines = file.readlines()
         
@@ -27,7 +52,7 @@ def load_xyz_energy_force(file_path, dtype=torch.float32):
             for _ in range(num_atoms):
                 parts = lines[i].split()
                 x, y, z = map(float, parts[1:4])
-                fx, fy, fz = map(float, parts[7:10])
+                fx, fy, fz = map(float, parts[force_rows[0]:force_rows[1]])
                 config.append([x, y, z])
                 forces.append([fx, fy, fz])
                 i += 1
@@ -35,14 +60,19 @@ def load_xyz_energy_force(file_path, dtype=torch.float32):
             data_forces.append(forces)
         return torch.tensor(data, dtype=dtype), torch.tensor(data_forces,dtype=dtype)
 
-class PropaneDataset_mace_deriv(Dataset):
-    def __init__(self,position_path, energy_path, mean_std=None, datatype=torch.float32):
+class PropaneDataset_mace_deriv_old_SOAP2Times(Dataset):
+    def __init__(self, position_path, energy_path, mean_std=None, datatype=torch.float32, Forces = True, row=2, force_rows = [7,10]):
+        self.use_force = Forces
         self.datatype = datatype
         # load position data
-        self.pos_data, self.forces = load_xyz_energy_force(position_path)
+        self.pos_data, self.forces = load_xyz_energy_force(position_path, force_rows=force_rows)
         # load energies -> target
-        self.energy_data = torch.tensor(np.loadtxt(energy_path, skiprows=1)[:,2], dtype=datatype)
+        self.energy_data = torch.tensor(np.loadtxt(energy_path, skiprows=1)[:,row], dtype=datatype)
         # create SOAP descriptors
+        if datatype == torch.float32:
+            dtype = "float32"
+        if datatype == torch.float64:
+            dtype = "float64"
         self.soap = SOAP(
         species=["C", "H"],
         r_cut=4.0,
@@ -50,20 +80,47 @@ class PropaneDataset_mace_deriv(Dataset):
         l_max=8,
         sigma=0.125,
         periodic=False,
+        dtype=dtype,
         )
-        if mean_std is not None:
+        self.soap2 = SOAP(
+        species=["Sn"],
+        r_cut=4.0,
+        n_max=8,
+        l_max=8,
+        sigma=0.5,
+        periodic=False,
+        dtype=dtype,
+        )
+        if mean_std == None:
+            self.mean = torch.mean(self.energy_data)
+            self.std = torch.std(self.energy_data)
+            self.energy_data = (self.energy_data - self.mean) / self.std
+        elif mean_std is not None:
             mean, std = mean_std
             self.energy_data = (self.energy_data - mean) / std  
+
+    def return_mean_std(self):
+        return self.mean, self.std
 
     def __len__(self): 
         return len(self.energy_data)
     
     def __getitem__(self, idx):
         propane = Atoms('C3H8', positions=self.pos_data[idx])
-        derivatives, descriptors = self.soap.derivatives(propane)
-        der = torch.tensor(derivatives, dtype=self.datatype)
-        desc = torch.tensor(descriptors, dtype=self.datatype)
-        return desc, self.energy_data[idx], self.pos_data[idx], der, self.forces[idx]
+        C_atoms = Atoms('Sn3', positions=self.pos_data[idx,:3,:])
+        if self.use_force:
+            derivatives, descriptors = self.soap.derivatives(propane)
+            der_c, desc_c = self.soap2.derivatives(C_atoms)
+            der_c = torch.tensor(der_c, dtype=self.datatype)
+            desc_c = torch.tensor(desc_c, dtype=self.datatype)
+            der = torch.tensor(derivatives, dtype=self.datatype)
+            desc = torch.tensor(descriptors, dtype=self.datatype)
+            return desc, desc_c, self.energy_data[idx], der, der_c, self.forces[idx]
+        else:
+            descriptors = self.soap.create(propane)
+            desc_c = self.soap2.create(C_atoms)
+            desc = torch.tensor(descriptors, dtype=self.datatype)
+            return desc, desc_c, self.energy_data[idx]
 
 
 class PropaneDataset_CG(Dataset):

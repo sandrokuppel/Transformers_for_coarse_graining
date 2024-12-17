@@ -8,18 +8,31 @@ from rdkit2ase import smiles2atoms
 from torch import nn
 
 
-def calc_center_of_mass(pos, DFT_oder = False):
-    if DFT_oder:
-        m_center = pos[:,[0, 3,4],:]*torch.tensor([12,1,1])[None,:,None]
-        m_side1 = pos[:,[1, 5,7,8],:]*torch.tensor([12,1,1,1])[None,:,None]
-        m_side2 = pos[:,[2, 6,9,10],:]*torch.tensor([12,1,1,1])[None,:,None]
+def calc_center_of_mass(pos, DFT_order = False, batched = True):
+    if batched:
+        if DFT_order:
+            m_center = pos[:,[0, 3,4],:]*torch.tensor([12,1,1])[None,:,None]
+            m_side1 = pos[:,[1, 5,7,8],:]*torch.tensor([12,1,1,1])[None,:,None]
+            m_side2 = pos[:,[2, 6,9,10],:]*torch.tensor([12,1,1,1])[None,:,None]
+        else:
+            m_center = pos[:,[1, 6,7],:]*torch.tensor([12,1,1])[None,:,None]
+            m_side1 = pos[:,[0, 3,4,5],:]*torch.tensor([12,1,1,1])[None,:,None]
+            m_side2 = pos[:,[2, 8,9,10],:]*torch.tensor([12,1,1,1])[None,:,None]
+        cm_c = torch.sum(m_center, dim=1)/14
+        cm_s1 = torch.sum(m_side1, dim=1)/15
+        cm_s2 = torch.sum(m_side2, dim=1)/15
     else:
-        m_center = pos[:,[1, 6,7],:]*torch.tensor([12,1,1])[None,:,None]
-        m_side1 = pos[:,[0, 3,4,5],:]*torch.tensor([12,1,1,1])[None,:,None]
-        m_side2 = pos[:,[2, 8,9,10],:]*torch.tensor([12,1,1,1])[None,:,None]
-    cm_c = torch.sum(m_center, dim=1)/14
-    cm_s1 = torch.sum(m_side1, dim=1)/15
-    cm_s2 = torch.sum(m_side2, dim=1)/15
+        if DFT_order:
+            m_center = pos[[0, 3,4],:]*torch.tensor([12,1,1])[:,None]
+            m_side1 = pos[[1, 5,7,8],:]*torch.tensor([12,1,1,1])[:,None]
+            m_side2 = pos[[2, 6,9,10],:]*torch.tensor([12,1,1,1])[:,None]
+        else:
+            m_center = pos[[1, 6,7],:]*torch.tensor([12,1,1])[:,None]
+            m_side1 = pos[[0, 3,4,5],:]*torch.tensor([12,1,1,1])[:,None]
+            m_side2 = pos[[2, 8,9,10],:]*torch.tensor([12,1,1,1])[:,None]
+        cm_c = torch.sum(m_center, dim=0)/14
+        cm_s1 = torch.sum(m_side1, dim=0)/15
+        cm_s2 = torch.sum(m_side2, dim=0)/15
     return cm_c, cm_s1, cm_s2
 
 def distillation(student_scores, y, teacher_scores, labels, T, alpha=1):
@@ -92,9 +105,8 @@ class Positionalencoding(nn.Module):
         stacked = torch.stack([even_PE, odd_PE], dim=2)
         PE = torch.flatten(stacked, start_dim=1, end_dim=2)
         return PE
-    
 
-def create_test_array(dtype=torch.float32, DFT = False, SOAP_2_times = True):
+def create_test_array_CG_SOAP(dtype=torch.float32, DFT_order = False, rcut = 4.0, n_max = 8, l_max = 8, sigma1 = 0.125, sigma2 = 0.5):
     macemp = mace_mp() 
     atoms=smiles2atoms('CCC')
     atoms.calc = macemp
@@ -104,19 +116,122 @@ def create_test_array(dtype=torch.float32, DFT = False, SOAP_2_times = True):
         data_type = "float32"
     soap = SOAP(
     species=["C", "H"],
-    r_cut=4.0,
-    n_max=8,
-    l_max=8,
-    sigma=0.125,
+    r_cut=rcut,
+    n_max=n_max,
+    l_max=l_max,
+    sigma=sigma1,
     periodic=False,
     dtype = data_type
     )
     soap2 = SOAP(
     species=["Sn"],
-    r_cut=4.0,
-    n_max=8,
-    l_max=8,
-    sigma=0.5,
+    r_cut=rcut,
+    n_max=n_max,
+    l_max=l_max,
+    sigma=sigma2,
+    periodic=False,
+    dtype=data_type,
+    )
+    if DFT_order:
+        positions = torch.tensor([
+            [0.0000, 0.5863, -0.0000],  # C1
+            [-1.2681, -0.2626, 0.0000],  # C2
+            [1.2681, -0.2626, -0.0000],  # C3
+            [2.1576, 0.3743, -0.0000],  # H7
+            [-1.3271, -0.9014, 0.8800],  # H8
+            [0.0000, 1.2449, 0.8760],  # H4 
+            [-1.3271, -0.9014, -0.8800],  # H9
+            [-0.0003, 1.2453, -0.8758],  # H5
+            [-2.1576, 0.3742, 0.0000],  # H6
+            [1.3271, -0.9014, -0.8800],  # H10
+            [1.3272, -0.9014, 0.8800]  # H11
+        ], dtype=dtype)
+    # https://cccbdb.nist.gov/exp2x.asp?casno=74986&charge=0
+    else:
+        positions = torch.tensor([
+            [-1.2681, -0.2626, 0.0000],  # C2
+            [0.0000, 0.5863, -0.0000],  # C1
+            [1.2681, -0.2626, -0.0000],  # C3
+            [0.0000, 1.2449, 0.8760],  # H4
+            [-0.0003, 1.2453, -0.8758],  # H5
+            [-2.1576, 0.3742, 0.0000],  # H6
+            [2.1576, 0.3743, -0.0000],  # H7
+            [-1.3271, -0.9014, 0.8800],  # H8
+            [-1.3271, -0.9014, -0.8800],  # H9
+            [1.3271, -0.9014, -0.8800],  # H10
+            [1.3272, -0.9014, 0.8800]  # H11
+        ], dtype=dtype)
+    
+    atoms.set_positions(positions)
+
+    step = 0.005
+    y_range = 0.5
+    if DFT_order:
+        positions[0,1] = positions[0,1] - y_range/2
+        positions[3,1] = positions[3,1] - y_range/2
+        positions[4,1] = positions[4,1] - y_range/2
+    else:
+        positions[1,1] = positions[1,1] - y_range/2
+        positions[6,1] = positions[6,1] - y_range/2
+        positions[7,1] = positions[7,1] - y_range/2
+    y_pos = []
+    n = int(y_range/step)
+    energies_mace = []
+    force_mace = []
+    deriv_cm = []
+    desc_cm = []
+    for i in range(n):
+        if DFT_order:
+            positions[0,1] = positions[0,1] + step
+            positions[3,1] = positions[3,1] + step
+            positions[4,1] = positions[4,1] + step
+            y_pos.append(positions[0,1].item())
+        else:
+            positions[1,1] = positions[1,1] + step
+            positions[6,1] = positions[6,1] + step
+            positions[7,1] = positions[7,1] + step
+            y_pos.append(positions[1,1].item())
+        atoms.set_positions(positions)
+        # get energy and force with mace
+        energies_mace.append(atoms.get_potential_energy())
+        force = atoms.get_forces()
+        if DFT_order:
+            force_mace.append(force[0,1])
+        else:
+            force_mace.append(force[1,1])       # force only the C atom that is moved
+        cm_c, cm_s1, cm_s2 = calc_center_of_mass(positions, DFT_order=DFT_order, batched=False)
+        pos_data_cm = torch.cat([cm_c[None,:], cm_s1[None,:], cm_s2[None,:]], dim=0)
+        CM_atoms = Atoms('Sn3', positions=pos_data_cm)
+        derivatives, descriptors = soap2.derivatives(CM_atoms)
+        deriv_cm.append(torch.tensor(derivatives, dtype=dtype)[None,...])
+        desc_cm.append(torch.tensor(descriptors, dtype=dtype)[None,...])
+    deriv_cm_tensor = torch.concat(deriv_cm, dim=0)
+    desc_cm_tensor = torch.concat(desc_cm, dim=0)
+    return desc_cm_tensor, deriv_cm_tensor, y_pos, energies_mace, force_mace
+
+def create_test_array(dtype=torch.float32, DFT = False, SOAP_2_times = True, rcut = 6.0, n_max=8, l_max=8, sigma=0.125, sigma2=0.5):
+    macemp = mace_mp() 
+    atoms=smiles2atoms('CCC')
+    atoms.calc = macemp
+    if dtype == torch.float64:
+        data_type = "float64"
+    if dtype == torch.float32:
+        data_type = "float32"
+    soap = SOAP(
+    species=["C", "H"],
+    r_cut=rcut,
+    n_max=n_max,
+    l_max=l_max,
+    sigma=sigma,
+    periodic=False,
+    dtype = data_type
+    )
+    soap2 = SOAP(
+    species=["Sn"],
+    r_cut=rcut,
+    n_max=n_max,
+    l_max=l_max,
+    sigma=sigma2,
     periodic=False,
     dtype=data_type,
     )
