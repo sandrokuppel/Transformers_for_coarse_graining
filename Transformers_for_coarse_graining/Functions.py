@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from ase import Atoms
+from ase.io import read
 from dscribe.descriptors import SOAP
 from mace.calculators import mace_mp
 from matplotlib import pyplot as plt
@@ -105,6 +106,92 @@ class Positionalencoding(nn.Module):
         stacked = torch.stack([even_PE, odd_PE], dim=2)
         PE = torch.flatten(stacked, start_dim=1, end_dim=2)
         return PE
+
+def create_test_array_position_CG(dtype=torch.float32, DFT_order = False, path = None):
+    macemp = mace_mp() 
+    atoms = read(path, index=0)
+    atoms.calc = macemp
+    positions = atoms.get_positions()
+    step = 0.005
+    y_range = 0.7
+    if DFT_order:
+        positions[0,1] = positions[0,1] - y_range/2
+        positions[3,1] = positions[3,1] - y_range/2
+        positions[4,1] = positions[4,1] - y_range/2
+    else:
+        positions[1,1] = positions[1,1] - y_range/2
+        positions[6,1] = positions[6,1] - y_range/2
+        positions[7,1] = positions[7,1] - y_range/2
+    y_pos = []
+    n = int(y_range/step)
+    energies_mace = []
+    force_mace = []
+    pos = []
+    for i in range(n):
+        if DFT_order:
+            positions[0,1] = positions[0,1] + step
+            positions[3,1] = positions[3,1] + step
+            positions[4,1] = positions[4,1] + step
+            y_pos.append(positions[0,1].item())
+        else:
+            positions[1,1] = positions[1,1] + step
+            positions[6,1] = positions[6,1] + step
+            positions[7,1] = positions[7,1] + step
+            y_pos.append(positions[1,1].item())
+        atoms.set_positions(positions)
+        # get energy and force with mace
+        energies_mace.append(atoms.get_potential_energy())
+        force = atoms.get_forces()
+        if DFT_order:
+            force_mace.append(torch.sum(torch.tensor(force, dtype=dtype)[[0,3,4],1],dim=0))
+        else:
+            force_mace.append(force[1,1])       # force only the C atom that is moved
+        pos.append(torch.tensor(positions, dtype=dtype)[None,...].clone())
+    pos_tensor = torch.concat(pos, dim=0)
+    return pos_tensor, y_pos, energies_mace, force_mace
+
+def create_test_array_position(dtype=torch.float32, DFT_order = False, path = None):
+    macemp = mace_mp() 
+    atoms = read(path, index=0)
+    atoms.calc = macemp
+    positions = atoms.get_positions()
+    step = 0.005
+    y_range = 0.7
+    if DFT_order:
+        positions[0,1] = positions[0,1] - y_range/2
+        positions[3,1] = positions[3,1] - y_range/2
+        positions[4,1] = positions[4,1] - y_range/2
+    else:
+        positions[1,1] = positions[1,1] - y_range/2
+        positions[6,1] = positions[6,1] - y_range/2
+        positions[7,1] = positions[7,1] - y_range/2
+    y_pos = []
+    n = int(y_range/step)
+    energies_mace = []
+    force_mace = []
+    pos = []
+    for i in range(n):
+        if DFT_order:
+            positions[0,1] = positions[0,1] + step
+            positions[3,1] = positions[3,1] + step
+            positions[4,1] = positions[4,1] + step
+            y_pos.append(positions[0,1].item())
+        else:
+            positions[1,1] = positions[1,1] + step
+            positions[6,1] = positions[6,1] + step
+            positions[7,1] = positions[7,1] + step
+            y_pos.append(positions[1,1].item())
+        atoms.set_positions(positions)
+        # get energy and force with mace
+        energies_mace.append(atoms.get_potential_energy())
+        force = atoms.get_forces()
+        if DFT_order:
+            force_mace.append(force[0,1])
+        else:
+            force_mace.append(force[1,1])       # force only the C atom that is moved
+        pos.append(torch.tensor(positions, dtype=dtype)[None,...].clone())
+    pos_tensor = torch.concat(pos, dim=0)
+    return pos_tensor, y_pos, energies_mace, force_mace
 
 def create_test_array_CG_SOAP(dtype=torch.float32, DFT_order = False, rcut = 4.0, n_max = 8, l_max = 8, sigma1 = 0.125, sigma2 = 0.5):
     macemp = mace_mp() 

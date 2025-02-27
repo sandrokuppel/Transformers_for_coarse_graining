@@ -11,6 +11,8 @@ from .Functions import (
     calc_center_of_mass,
     create_test_array,
     create_test_array_CG_SOAP,
+    create_test_array_position,
+    create_test_array_position_CG,
     distillation,
     prepend_prefix,
     remove_keys,
@@ -26,6 +28,8 @@ __all__ = [TBlock.__name__, Encoder.__name__, TPrep.__name__, LinearWarmupSchedu
             create_test_array.__name__, distillation.__name__,
             calc_center_of_mass.__name__,
             create_test_array_CG_SOAP.__name__,
+            create_test_array_position_CG.__name__,
+            create_test_array_position.__name__,
             load_xyz_energy_force.__name__,
             load_xyz.__name__,
            ]
